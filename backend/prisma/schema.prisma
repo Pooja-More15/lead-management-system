@@ -1,0 +1,133 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  AGENT
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  LOST
+}
+
+enum LeadPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model User {
+  id            String              @id @default(uuid()) @db.Uuid
+  name          String
+  email         String              @unique
+  password      String
+  role          Role                @default(AGENT)
+  isActive      Boolean             @default(true) @map("is_active")
+  createdBy     String?             @map("created_by") @db.Uuid
+  lastLogin     DateTime?           @map("last_login")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  
+  // Self-Relations for Creator
+  creator       User?               @relation("UserCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdUsers  User[]              @relation("UserCreatedBy")
+
+  // Relations
+  createdLeads  Lead[]              @relation("LeadCreatedBy")
+  assignedLeads Lead[]              @relation("LeadAssignedTo")
+  activityLogs  ActivityLog[]       @relation("UserActivity")
+  targetActivityLogs ActivityLog[]  @relation("TargetUserActivity")
+  statusHistory LeadStatusHistory[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+  @@index([email])
+}
+
+model Lead {
+  id         String             @id @default(uuid()) @db.Uuid
+  name       String
+  email      String
+  phone      String
+  source     String
+  status     LeadStatus         @default(NEW)
+  priority   LeadPriority       @default(MEDIUM)
+  notes      String?
+  assignedTo String?            @map("assigned_to") @db.Uuid
+  createdBy  String             @map("created_by") @db.Uuid
+  isDeleted  Boolean            @default(false) @map("is_deleted")
+  deletedAt  DateTime?          @map("deleted_at")
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  // Relations
+  agent      User?              @relation("LeadAssignedTo", fields: [assignedTo], references: [id], onDelete: SetNull)
+  creator    User               @relation("LeadCreatedBy", fields: [createdBy], references: [id], onDelete: Cascade)
+  activityLogs ActivityLog[]
+  statusHistory LeadStatusHistory[]
+
+  @@map("leads")
+  @@index([email])
+  @@index([source])
+  @@index([status])
+  @@index([assignedTo])
+  @@index([priority])
+}
+
+model ActivityLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  leadId       String?  @map("lead_id") @db.Uuid
+  targetUserId String?  @map("target_user_id") @db.Uuid
+  action       String
+  description  String
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user       User? @relation("UserActivity", fields: [userId], references: [id], onDelete: SetNull)
+  targetUser User? @relation("TargetUserActivity", fields: [targetUserId], references: [id], onDelete: SetNull)
+  lead       Lead? @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@map("activity_logs")
+}
+
+model LeadStatusHistory {
+  id         String     @id @default(uuid()) @db.Uuid
+  leadId     String     @map("lead_id") @db.Uuid
+  oldStatus  LeadStatus @map("old_status")
+  newStatus  LeadStatus @map("new_status")
+  changedBy  String     @map("changed_by") @db.Uuid
+  changedAt  DateTime   @default(now()) @map("changed_at")
+
+  // Relations
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [changedBy], references: [id], onDelete: Cascade)
+
+  @@map("lead_status_history")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
